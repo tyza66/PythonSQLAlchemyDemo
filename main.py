@@ -1,27 +1,15 @@
 # By tyza66
 import os
 from contextlib import contextmanager
-from dataclasses import asdict
-
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy import String, Integer
 
-# Ensure PyMySQL is installed before creating engine to give a clearer error
-try:
-    import pymysql  # type: ignore
-except ImportError as exc:  # pragma: no cover - startup guard
-    raise SystemExit("Missing dependency pymysql. Run: pip install -r requirements.txt") from exc
-
 # 从.env文件加载数据库配置
 load_dotenv()
+# 从环境变量字典获取数据库连接字符串
 DATABASE_URL = os.environ.get("DATABASE_URL")
-if DATABASE_URL and DATABASE_URL.startswith("mysql://"):
-    # Normalize to pymysql driver if user omitted it
-    DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
-if not DATABASE_URL:
-    raise SystemExit("DATABASE_URL is required. Example: mysql+pymysql://user:pass@localhost:3306/dbname")
 
 # 定义一个基础模型类
 class Base(DeclarativeBase):
@@ -38,6 +26,9 @@ class User(Base):
     def __repr__(self) -> str:  # 定义对象的字符串表示，方便调试和日志输出 类似于Java中的toString方法
         return f"User(id={self.id}, name={self.name!r}, email={self.email!r})"
 
+    def to_dict(self) -> dict:
+        return {"id": self.id, "name": self.name, "email": self.email}
+
 
 # 创建数据库引擎，echo=True启用SQL日志，future=True启用SQLAlchemy 2.0风格的行为
 engine = create_engine(DATABASE_URL, echo=True, future=True)
@@ -46,7 +37,7 @@ engine = create_engine(DATABASE_URL, echo=True, future=True)
 @contextmanager
 def session_scope():
     # 使用上下文管理器确保会话正确关闭，并在发生异常时回滚事务
-    with Session(engine) as session:
+    with Session(engine, expire_on_commit=False) as session:
         try:
             # 相当于在这里开始一个事务，yield后如果没有异常则提交，如果有异常则回滚
             yield session
@@ -92,7 +83,7 @@ def delete_user(user_id: int) -> bool:
         session.delete(user)
         return True
 
-
+# 自测用的
 def main():
     init_db()
 
@@ -102,19 +93,26 @@ def main():
 
     print("查询当前的用户列表")
     for u in list_users():
-        print(asdict(u))
+        print(u.to_dict())
 
     print("通过id更新Bob的电子邮件地址")
     updated = update_user_email(bob.id, "bb@example.com")
-    print("Updated:", asdict(updated) if updated else None)
+    print("Updated:", updated.to_dict() if updated else None)
 
     print("通过id删掉Alice")
     delete_user(alice.id)
 
     print("Users after delete:")
     for u in list_users():
-        print(asdict(u))
+        print(u.to_dict())
 
 if __name__ == "__main__":
-    main()
+    # main()
+    init_db()
+    alice = create_user("Alice", "alice@example.com")
+    bob = create_user("Bob", "bob@example.com")
+
+    print("查询当前的用户列表")
+    for u in list_users():
+        print(u.to_dict())
 
